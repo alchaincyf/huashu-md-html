@@ -19,7 +19,9 @@ import re
 import shutil
 import subprocess
 import sys
+from html import unescape
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -197,6 +199,65 @@ def inline_images_in_html(html: str, base_dir: Path) -> str:
     return pattern.sub(replace, html)
 
 
+LINK_TAG_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
+ATTR_RE = re.compile(r"""([^\s=]+)\s*=\s*(['"])(.*?)\2""")
+
+
+def parse_html_attrs(tag: str) -> dict[str, str]:
+    return {name.lower(): value for name, _, value in ATTR_RE.findall(tag)}
+
+
+def href_matches_path(href: str, path: Path) -> bool:
+    decoded = unquote(unescape(href))
+    parsed = urlparse(decoded)
+    if parsed.scheme in {"http", "https", "data"}:
+        return False
+    if parsed.scheme == "file":
+        decoded = unquote(parsed.path)
+        if re.match(r"^/[A-Za-z]:/", decoded):
+            decoded = decoded[1:]
+
+    target = path.resolve()
+    candidates = {
+        str(path),
+        path.as_posix(),
+        str(target),
+        target.as_posix(),
+    }
+    if decoded in candidates or decoded.replace("\\", "/") in candidates:
+        return True
+
+    try:
+        return Path(decoded).resolve() == target
+    except (OSError, ValueError):
+        return False
+
+
+def inline_theme_css_in_html(html: str, css_path: Path) -> str:
+    """Inline the local theme stylesheet so standalone HTML works over file://."""
+    css = css_path.read_text(encoding="utf-8")
+    style_block = f"<style>\n{css}\n</style>"
+    inlined = False
+
+    def replace(match: re.Match[str]) -> str:
+        nonlocal inlined
+        tag = match.group(0)
+        attrs = parse_html_attrs(tag)
+        rel = attrs.get("rel", "").lower().split()
+        href = attrs.get("href")
+        if href and "stylesheet" in rel and href_matches_path(href, css_path):
+            inlined = True
+            return style_block
+        return tag
+
+    html = LINK_TAG_RE.sub(replace, html)
+    if inlined:
+        return html
+    if "</head>" in html:
+        return html.replace("</head>", f"{style_block}\n</head>", 1)
+    return f"{style_block}\n{html}"
+
+
 def copy_images_alongside(images: list[Path], src_base: Path, out_dir: Path, quiet: bool) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     for img in images:
@@ -279,9 +340,17 @@ def main() -> int:
         sys.stderr.write(proc.stderr or "[error] pandoc failed without stderr output.\n")
         return proc.returncode
 
-    if args.inline_images:
+    html_text: str | None = None
+    if args.standalone:
         html_text = output_html.read_text(encoding="utf-8")
+        html_text = inline_theme_css_in_html(html_text, css_path)
+
+    if args.inline_images:
+        if html_text is None:
+            html_text = output_html.read_text(encoding="utf-8")
         html_text = inline_images_in_html(html_text, src_base)
+
+    if html_text is not None:
         output_html.write_text(html_text, encoding="utf-8")
 
     if not args.quiet:
