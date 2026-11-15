@@ -296,6 +296,10 @@ def main() -> int:
     except FileNotFoundError:
         sys.stderr.write(HELP_PANDOC)
         return 2
+    finally:
+        # --embed-css writes the <style> block to a temp file for --include-in-header; remove it
+        if "--include-in-header" in cmd:
+            Path(cmd[cmd.index("--include-in-header") + 1]).unlink(missing_ok=True)
 
     if proc.returncode != 0:
         sys.stderr.write(proc.stderr or "[error] pandoc failed without stderr output.\n")

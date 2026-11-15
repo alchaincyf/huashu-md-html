@@ -8,6 +8,9 @@ $if(description-meta)$  <meta name="description" content="$description-meta$" />
   <title>$pagetitle$</title>
 $for(css)$  <link rel="stylesheet" href="$css$" />
 $endfor$
+$for(header-includes)$
+  $header-includes$
+$endfor$
 </head>
 <body>
 
