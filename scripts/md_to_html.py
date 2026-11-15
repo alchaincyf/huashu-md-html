@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -86,6 +87,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=True,
         help="Produce a self-contained single HTML file (default).",
+    )
+    p.add_argument(
+        "--embed-css",
+        action="store_true",
+        default=True,
+        help="Inline theme CSS into the HTML (default). Portable single file.",
+    )
+    p.add_argument(
+        "--no-embed-css",
+        dest="embed_css",
+        action="store_false",
+        help="Link theme CSS by absolute path instead of inlining.",
     )
     p.add_argument(
         "--katex",
@@ -233,7 +246,16 @@ def build_pandoc_command(
     ]
     if args.standalone:
         cmd.append("--standalone")
-    cmd.extend(["--css", str(css_path)])
+    if args.embed_css:
+        css_text = css_path.read_text(encoding="utf-8")
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".html", delete=False, encoding="utf-8"
+        )
+        tmp.write(f"<style>\n{css_text}\n</style>\n")
+        tmp.close()
+        cmd.extend(["--include-in-header", tmp.name])
+    else:
+        cmd.extend(["--css", str(css_path)])
     if template_path:
         cmd.extend(["--template", str(template_path)])
     if should_emit_toc(args):
