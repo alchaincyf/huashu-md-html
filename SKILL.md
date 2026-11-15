@@ -5,7 +5,7 @@ metadata:
   author: "花叔"
   homepage: "https://github.com/alchaincyf"
   repository: "https://github.com/alchaincyf/huashu-md-html"
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 # huashu-md-html
